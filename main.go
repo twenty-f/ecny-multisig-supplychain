@@ -58,7 +58,7 @@ type MultiSigContract struct {
 }
 
 // InitContract 初始化合约与白名单，设置 1+1+3 阈值。
-func InitContract(contractID string, amount int) *MultiSigContract {
+func InitContract(contractID string, amount int, logisticsmin int, qualitymin int, totalmin int) *MultiSigContract {
 	m := &MultiSigContract{
 		ContractID: contractID,
 		Amount:     amount,
@@ -81,13 +81,31 @@ func InitContract(contractID string, amount int) *MultiSigContract {
 		LogisticsCount: 0,
 		QualityCount:   0,
 		TotalCount:     0,
-		LogisticsMin:   1,
-		QualityMin:     1,
-		TotalMin:       3,
+		LogisticsMin:   logisticsmin,
+		QualityMin:     qualitymin,
+		TotalMin:       totalmin,
 		Status:         StatusPending,
 	}
 
 	return m
+}
+
+func (m *MultiSigContract) Deposit(amount int) error {
+	// 拦截 1：状态不对
+	if m.Status != StatusPending {
+		return errors.New("❌ 汇款失败：合约当前不处于待汇款状态")
+	}
+
+	// 拦截 2：金额不对（防止少打钱或者多打钱扯皮）
+	if amount != m.Amount {
+		return fmt.Errorf("❌ 汇款失败：金额不匹配。需锁仓 %d，实际支付 %d", m.Amount, amount)
+	}
+
+	// 资金到位，状态流转
+	m.Status = StatusSigning
+	fmt.Printf("💰 【资金锁仓成功】采购方已将 %d 元数字人民币注入合约 eCNY-MSIG-SC-20260429-0001！\n", amount)
+	fmt.Println("⏳ 合约状态变更为：待签名 (StatusSigning)，请各节点开始授权...")
+	return nil
 }
 
 func (m *MultiSigContract) Sign(name string, role RoleType) error {
@@ -108,26 +126,78 @@ func (m *MultiSigContract) Sign(name string, role RoleType) error {
 	m.TotalCount++
 	if role == RoleLogistics {
 		m.LogisticsCount++
-		return nil
+	} else {
+		m.QualityCount++
+
 	}
-	m.QualityCount++
+	if m.LogisticsCount >= m.LogisticsMin && m.QualityCount >= m.QualityMin && m.TotalCount >= m.TotalMin {
+		m.Status = "StatusPaid" // 状态瞬间变为已打款
+		fmt.Println("🎉 触发智能合约：多签阈值已达标，1000万数字人民币自动划拨至供应商账户！")
+	}
+	return nil
+}
+
+// 手动验证是否可以打款
+func (m *MultiSigContract) CheakAndPay() error {
+	// 合约处于待签名
+	if m.Status != StatusSigning {
+		return errors.New("❌ 验证失败：合约不在待签名状态")
+	}
+	if m.LogisticsCount < m.LogisticsMin {
+		return errors.New("❌ 验证失败：物流节点签名量不足")
+	}
+	if m.QualityCount < m.QualityMin {
+		return errors.New("❌ 验证失败：质检节点签名量不足")
+	}
+	if m.TotalCount < m.TotalMin {
+		return errors.New("❌ 验证失败：总节点签名量不足")
+	}
+	m.Status = StatusCompleted
+	// 执行打款操作
+	fmt.Println("🎉 触发智能合约：多签阈值已达标，1000万数字人民币自动划拨至供应商账户！")
 	return nil
 }
 
 func main() {
-	contract := InitContract("SCF-MULTISIG-0001", 100000)
+	// 1. 初始化你的合约 (这里假设你已经写好了 Init 函数，或者直接手动构建一个)
+	// 记得把阈值设为：物流至少 1，质检至少 1，总数至少 3
+	contract := InitContract("eCNY-MSIG-SC-20260429-0001", 10000000, 1, 1, 3)
 
-	fmt.Printf("初始化完成: ContractID=%s, Amount=%d, Status=%s\n", contract.ContractID, contract.Amount, contract.Status)
-	fmt.Printf("阈值配置: LogisticsMin=%d, QualityMin=%d, TotalMin=%d\n", contract.LogisticsMin, contract.QualityMin, contract.TotalMin)
+	fmt.Println("==== 浙江农业集团：千万级化肥采购案多签启动 ====")
 
-	// 模拟几次签名调用（仅骨架演示，不包含核心逻辑）
-	_ = contract.Sign("A", RoleLogistics)
-	_ = contract.Sign("a", RoleQuality)
-	_ = contract.Sign("B", RoleLogistics)
+	// 2. 模拟真实业务流转
+	err := contract.Deposit(10000000)
+	if err != nil {
+		fmt.Println(err)
+		return // 钱没到位，直接终止
+	}
 
-	fmt.Println("---- 合约状态快照 ----")
-	fmt.Printf("Status=%s\n", contract.Status)
-	fmt.Printf("Count: logistics=%d, quality=%d, total=%d\n", contract.LogisticsCount, contract.QualityCount, contract.TotalCount)
-	fmt.Printf("Signatures(logistics)=%v\n", contract.Signatures[RoleLogistics])
-	fmt.Printf("Signatures(quality)=%v\n", contract.Signatures[RoleQuality])
+	err1 := contract.Sign("A", RoleLogistics) // 顺丰快递小哥 A 确认发货
+	if err1 != nil {
+		fmt.Println(err1)
+	} else {
+		fmt.Println("✅ 物流节点 A 签名成功！")
+	}
+
+	err11 := contract.Sign("A", RoleLogistics) // 顺丰快递小哥 A 重复确认发货
+	if err11 != nil {
+		fmt.Println(err11)
+	} else {
+		fmt.Println("✅ 物流节点 A 签名成功！")
+	}
+
+	err2 := contract.Sign("a", RoleQuality) // 质检员 a 确认合格
+	if err2 != nil {
+		fmt.Println(err2)
+	} else {
+		fmt.Println("✅ 质检节点 a 签名成功！")
+	}
+
+	err3 := contract.Sign("B", RoleLogistics) // 菜鸟驿站站长 B 再次确认（满足总数3的最后一块拼图）
+	if err3 != nil {
+		fmt.Println(err3)
+	} else {
+		fmt.Println("✅ 物流节点 B 签名成功！")
+	}
+
 }
