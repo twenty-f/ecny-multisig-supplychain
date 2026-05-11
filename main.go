@@ -131,7 +131,7 @@ func (m *MultiSigContract) Sign(name string, role RoleType) error {
 
 	}
 	if m.LogisticsCount >= m.LogisticsMin && m.QualityCount >= m.QualityMin && m.TotalCount >= m.TotalMin {
-		m.Status = "StatusPaid" // 状态瞬间变为已打款
+		m.Status = StatusCompleted // 状态瞬间变为已打款
 		fmt.Println("🎉 触发智能合约：多签阈值已达标，1000万数字人民币自动划拨至供应商账户！")
 	}
 	return nil
